@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AugmentOS RTMP Control</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 20px;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+        .container {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .user-info,
+        .rtmp-control,
+        .stream-status-container {
+            margin-bottom: 20px;
+        }
+        .user-id {
+            font-weight: bold;
+            color: #007bff;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        input[type="text"] {
+            width: calc(100% - 22px);
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            padding: 10px 15px;
+            margin-right: 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1em;
+        }
+        .btn-start {
+            background-color: #28a745;
+            color: white;
+        }
+        .btn-stop {
+            background-color: #dc3545;
+            color: white;
+        }
+        .btn-update {
+            background-color: #007bff;
+            color: white;
+        }
+        .status-active {
+            color: green;
+            font-weight: bold;
+        }
+        .status-stopped {
+            color: red;
+            font-weight: bold;
+        }
+        .status-error {
+            color: orange;
+            font-weight: bold;
+        }
+        .status-initializing,
+        .status-busy {
+            color: #6c757d;
+            font-weight: bold;
+        }
+        #streamStatus, #streamStats {
+            padding: 10px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+            white-space: pre-wrap; /* To show formatted JSON */
+        }
+        .hidden { display: none; }
+        .error-message { color: red; margin-top: 10px; }
+        .success-message { color: green; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>RTMP Stream Control</h1>
+        </header>
+
+        <div class="user-info">
+            <% if (userId) { %>
+                <p>User ID: <span class="user-id"><%= userId %></span></p>
+            <% } else { %>
+                <p><span class="user-id">Not Authenticated</span> - Please open from AugmentOS app. Controls may not work.</p>
+            <% } %>
+        </div>
+
+        <% if (userId) { %>
+            <div class="rtmp-control">
+                <h2>RTMP URL</h2>
+                <label for="rtmpUrlInput">RTMP URL:</label>
+                <input type="text" id="rtmpUrlInput" value="<%= rtmpUrl || '' %>">
+                <button id="updateRtmpUrlButton" class="btn-update">Update URL</button>
+            </div>
+
+            <div class="stream-actions">
+                <h2>Stream Actions</h2>
+                <button id="startStreamButton" class="btn-start">Start Stream</button>
+                <button id="stopStreamButton" class="btn-stop">Stop Stream</button>
+            </div>
+        <% } %>
+
+        <div class="stream-status-container">
+            <h2>Current Stream Status</h2>
+            <div id="currentStatusText"></div>
+            <pre id="streamStatus"><%= JSON.stringify(streamStatus, null, 2) %></pre>
+            <h2>Stream Stats</h2>
+            <pre id="streamStats"><%= JSON.stringify(streamStatus && streamStatus.stats ? streamStatus.stats : {}, null, 2) %></pre>
+        </div>
+        <div id="messageArea" class="message-area"></div>
+
+    </div>
+
+    <script>
+        const rtmpUrlInput = document.getElementById('rtmpUrlInput');
+        const updateRtmpUrlButton = document.getElementById('updateRtmpUrlButton');
+        const startStreamButton = document.getElementById('startStreamButton');
+        const stopStreamButton = document.getElementById('stopStreamButton');
+        const streamStatusDiv = document.getElementById('streamStatus');
+        const streamStatsDiv = document.getElementById('streamStats');
+        const currentStatusTextDiv = document.getElementById('currentStatusText');
+        const messageArea = document.getElementById('messageArea');
+
+        const currentUserId = '<%= userId %>'; // Will be empty if not authenticated
+
+        function showMessage(text, isError = false) {
+            messageArea.textContent = text;
+            messageArea.className = isError ? 'error-message' : 'success-message';
+        }
+
+        async function fetchStreamInfo() {
+            try {
+                const response = await fetch('/api/stream-info');
+                const data = await response.json();
+                if (rtmpUrlInput && data.rtmpUrl) rtmpUrlInput.value = data.rtmpUrl;
+                if (streamStatusDiv) streamStatusDiv.textContent = JSON.stringify(data.streamStatus || {}, null, 2);
+                if (streamStatsDiv) streamStatsDiv.textContent = JSON.stringify(data.streamStatus && data.streamStatus.stats ? data.streamStatus.stats : {}, null, 2);
+                updateStatusText(data.streamStatus);
+            } catch (error) {
+                console.error('Error fetching stream info:', error);
+                if (streamStatusDiv) streamStatusDiv.textContent = 'Error fetching status.';
+                if (streamStatsDiv) streamStatsDiv.textContent = 'N/A';
+                updateStatusText(null);
+            }
+        }
+
+        function updateStatusText(statusObj) {
+            if (!currentStatusTextDiv) return;
+            if (!statusObj || !statusObj.status) {
+                currentStatusTextDiv.textContent = 'Status: Unknown';
+                currentStatusTextDiv.className = '';
+                return;
+            }
+            currentStatusTextDiv.textContent = `Status: ${statusObj.status.toUpperCase()}`;
+            currentStatusTextDiv.className = `status-${statusObj.status.toLowerCase()}`;
+        }
+
+        if (updateRtmpUrlButton) {
+            updateRtmpUrlButton.addEventListener('click', async () => {
+                if (!currentUserId) { showMessage('Not authenticated. Cannot update URL.', true); return; }
+                const newRtmpUrl = rtmpUrlInput.value;
+                try {
+                    const response = await fetch('/api/rtmp-url', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ rtmpUrl: newRtmpUrl })
+                    });
+                    const result = await response.json();
+                    if (result.success) {
+                        showMessage('RTMP URL updated successfully!');
+                        fetchStreamInfo(); // Refresh info
+                    } else {
+                        showMessage(result.message || 'Failed to update RTMP URL.', true);
+                    }
+                } catch (error) {
+                    console.error('Error updating RTMP URL:', error);
+                    showMessage('Error updating RTMP URL.', true);
+                }
+            });
+        }
+
+        if (startStreamButton) {
+            startStreamButton.addEventListener('click', async () => {
+                if (!currentUserId) { showMessage('Not authenticated. Cannot start stream.', true); return; }
+                const currentRtmpUrl = rtmpUrlInput ? rtmpUrlInput.value : null;
+                showMessage('Requesting to start stream...');
+                try {
+                    const response = await fetch('/api/start-stream', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ rtmpUrl: currentRtmpUrl }) // Send current URL from input
+                    });
+                    const result = await response.json();
+                    if (result.success) {
+                        showMessage('Start stream request sent successfully!');
+                    } else {
+                        showMessage(result.message || 'Failed to start stream.', true);
+                    }
+                    // Status will update via polling or future websocket push
+                    setTimeout(fetchStreamInfo, 1000); // Fetch after a short delay
+                } catch (error) {
+                    console.error('Error starting stream:', error);
+                    showMessage('Error starting stream.', true);
+                }
+            });
+        }
+
+        if (stopStreamButton) {
+            stopStreamButton.addEventListener('click', async () => {
+                if (!currentUserId) { showMessage('Not authenticated. Cannot stop stream.', true); return; }
+                showMessage('Requesting to stop stream...');
+                try {
+                    const response = await fetch('/api/stop-stream', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                    const result = await response.json();
+                    if (result.success) {
+                        showMessage('Stop stream request sent successfully!');
+                    } else {
+                        showMessage(result.message || 'Failed to stop stream.', true);
+                    }
+                    setTimeout(fetchStreamInfo, 1000); // Fetch after a short delay
+                } catch (error) {
+                    console.error('Error stopping stream:', error);
+                    showMessage('Error stopping stream.', true);
+                }
+            });
+        }
+
+        // Initial fetch and periodic refresh
+        fetchStreamInfo();
+        setInterval(fetchStreamInfo, 5000); // Refresh every 5 seconds
+
+        // Update status text on load
+        const initialStatus = <%- JSON.stringify(streamStatus || null) %>;
+        updateStatusText(initialStatus);
+
+    </script>
+</body>
+</html>
