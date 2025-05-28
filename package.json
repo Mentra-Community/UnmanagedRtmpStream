@@ -4,13 +4,14 @@
   "main": "index.js",
   "scripts": {
     "dev": "bun --hot src/index.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "ngrok": "ngrok http --url=israelovtpa.ngrok.app 3000"
   },
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@augmentos/sdk": "1.1.7",
+    "@augmentos/sdk": "*",
     "@types/express": "^5.0.1",
     "@types/node": "^22.13.14",
     "@types/ws": "^8.18.0",
