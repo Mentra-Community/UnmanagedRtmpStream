@@ -13,9 +13,18 @@ interface UserStreamState {
   session: TpaSession;
 }
 
+// Interface for persistent user settings that survive disconnections
+interface UserPersistentSettings {
+  rtmpUrl: string;
+}
+
 class ExampleAugmentOSApp extends TpaServer {
   // Map userId to their session and stream state
   private activeUserStates: Map<string, UserStreamState> = new Map();
+
+  // Map userId to their persistent settings (survives disconnections)
+  private persistentUserSettings: Map<string, UserPersistentSettings> = new Map();
+
   private defaultRtmpUrl: string = 'rtmp://0.0.0.0/s/streamKey';
 
   constructor() {
@@ -36,28 +45,67 @@ class ExampleAugmentOSApp extends TpaServer {
     return { type: GlassesToCloudMessageType.RTMP_STREAM_STATUS, status: 'stopped', timestamp: new Date() };
   }
 
-  // Method to update RTMP URL for a specific user
+  /**
+   * Updates the RTMP URL for a specific user
+   * @param userId - The user ID to update the RTMP URL for
+   * @param newUrl - The new RTMP URL to set
+   * @throws {Error} If the URL is invalid or user has no active session
+   */
   public setRtmpUrlForUser(userId: string, newUrl: string): void {
+    // Basic URL validation
+    if (!newUrl || typeof newUrl !== 'string') {
+      throw new Error('RTMP URL must be a non-empty string');
+    }
+
+    // Basic RTMP URL format validation
+    if (!newUrl.startsWith('rtmp://') && !newUrl.startsWith('rtmps://')) {
+      console.warn(`Warning: RTMP URL for user ${userId} does not start with rtmp:// or rtmps://`);
+    }
+
+    // Save to persistent storage first
+    this.persistentUserSettings.set(userId, { rtmpUrl: newUrl });
+
     const userState = this.activeUserStates.get(userId);
     if (userState) {
+      const previousUrl = userState.rtmpUrl;
       userState.rtmpUrl = newUrl;
-      console.log(`RTMP URL updated to: ${newUrl} for user ${userId}`);
+      console.log(`RTMP URL updated for user ${userId}: ${previousUrl} -> ${newUrl}`);
+
+      // Notify the user's glasses that the URL has been updated
+      userState.session.layouts.showTextWall(`RTMP URL updated to: ${newUrl}`);
     } else {
-      console.warn(`No active session for user ${userId} to set RTMP URL.`);
-      // Optionally, store it if you want to persist it for next session, or handle error
+      console.log(`RTMP URL saved for user ${userId} (no active session): ${newUrl}`);
     }
   }
 
-  // Method to get current RTMP URL for a specific user
+  /**
+   * Gets the RTMP URL for a specific user
+   * @param userId - The user ID to get the RTMP URL for
+   * @returns The user's RTMP URL or the default URL if user not found
+   */
   public getRtmpUrlForUser(userId: string): string | undefined {
+    // Check persistent storage first, then active state, then default
+    const persistentSettings = this.persistentUserSettings.get(userId);
+    if (persistentSettings) {
+      return persistentSettings.rtmpUrl;
+    }
+
     return this.activeUserStates.get(userId)?.rtmpUrl || this.defaultRtmpUrl;
   }
 
+  /**
+   * Gets the default RTMP URL
+   * @returns The default RTMP URL
+   */
   public getDefaultRtmpUrl(): string {
     return this.defaultRtmpUrl;
   }
 
-  // Method to get stream status for a specific user
+  /**
+   * Gets the stream status for a specific user
+   * @param userId - The user ID to get the stream status for
+   * @returns The user's stream status or a default stopped status
+   */
   public getStreamStatusForUser(userId: string): RtmpStreamStatus | undefined {
     return this.activeUserStates.get(userId)?.streamStatus || this.getInitialStreamStatus();
   }
@@ -116,14 +164,20 @@ class ExampleAugmentOSApp extends TpaServer {
 
   protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
     console.log(`New session started: ${sessionId} for user ${userId}`);
-    // Initialize state for this user
+
+    // Get the user's persistent RTMP URL or use default
+    const persistentSettings = this.persistentUserSettings.get(userId);
+    const userRtmpUrl = persistentSettings?.rtmpUrl || this.defaultRtmpUrl;
+
+    // Initialize state for this user with their persistent RTMP URL
     const userState: UserStreamState = {
-      rtmpUrl: this.defaultRtmpUrl, // Start with default
+      rtmpUrl: userRtmpUrl,
       streamStatus: this.getInitialStreamStatus(),
       session: session,
     };
     this.activeUserStates.set(userId, userState);
 
+    console.log(`User ${userId} restored with RTMP URL: ${userRtmpUrl}`);
     session.layouts.showTextWall("Example Photo App Ready!");
     // ... (rest of initial photo logic if any, currently commented out)
 
@@ -211,10 +265,13 @@ class ExampleAugmentOSApp extends TpaServer {
             console.warn("Received stream status for a user with no active state object:", userId);
         }
       }),
-      session.events.onDisconnected((reason: string) => {
+      session.events.onDisconnected((data: string | { message: string; code: number; reason: string; wasClean: boolean; permanent?: boolean }) => {
+        const reason = typeof data === 'string' ? data : data.reason;
         console.log(`Session ${sessionId} for user ${userId} disconnected. Reason: ${reason}`);
+
+        // Only remove the active session state, preserve persistent settings
         this.activeUserStates.delete(userId);
-        console.log(`User state for ${userId} removed. Active states: ${this.activeUserStates.size}`);
+        console.log(`Active session for ${userId} removed. Active sessions: ${this.activeUserStates.size}. Persistent settings preserved.`);
       })
     ];
 

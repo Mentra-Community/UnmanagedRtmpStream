@@ -67,12 +67,38 @@ export function setupExpressRoutes(serverInstance: TpaServer): void {
     if (!userId) {
       return res.status(401).json({ success: false, message: 'User not authenticated.' });
     }
+
     const { rtmpUrl } = req.body;
-    if (typeof rtmpUrl === 'string') {
+
+    // Validate request body
+    if (!rtmpUrl) {
+      return res.status(400).json({
+        success: false,
+        message: 'RTMP URL is required in request body.'
+      });
+    }
+
+    if (typeof rtmpUrl !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'RTMP URL must be a string.'
+      });
+    }
+
+    try {
       exampleApp.setRtmpUrlForUser(userId, rtmpUrl);
-      res.json({ success: true, message: 'RTMP URL updated for user.', newRtmpUrl: rtmpUrl });
-    } else {
-      res.status(400).json({ success: false, message: 'Invalid RTMP URL provided.' });
+      res.json({
+        success: true,
+        message: 'RTMP URL updated successfully for user.',
+        newRtmpUrl: rtmpUrl,
+        userId: userId
+      });
+    } catch (error: any) {
+      console.error(`Error updating RTMP URL for user ${userId}:`, error);
+      res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to update RTMP URL.'
+      });
     }
   });
 

@@ -147,7 +147,6 @@
             try {
                 const response = await fetch('/api/stream-info');
                 const data = await response.json();
-                if (rtmpUrlInput && data.rtmpUrl) rtmpUrlInput.value = data.rtmpUrl;
                 if (streamStatusDiv) streamStatusDiv.textContent = JSON.stringify(data.streamStatus || {}, null, 2);
                 if (streamStatsDiv) streamStatsDiv.textContent = JSON.stringify(data.streamStatus && data.streamStatus.stats ? data.streamStatus.stats : {}, null, 2);
                 updateStatusText(data.streamStatus);
@@ -172,24 +171,46 @@
 
         if (updateRtmpUrlButton) {
             updateRtmpUrlButton.addEventListener('click', async () => {
-                if (!currentUserId) { showMessage('Not authenticated. Cannot update URL.', true); return; }
-                const newRtmpUrl = rtmpUrlInput.value;
+                if (!currentUserId) {
+                    showMessage('Not authenticated. Cannot update URL.', true);
+                    return;
+                }
+
+                const newRtmpUrl = rtmpUrlInput.value.trim();
+
+                // Basic client-side validation
+                if (!newRtmpUrl) {
+                    showMessage('RTMP URL cannot be empty.', true);
+                    return;
+                }
+
+                // Basic RTMP URL format validation
+                if (!newRtmpUrl.startsWith('rtmp://') && !newRtmpUrl.startsWith('rtmps://')) {
+                    if (!confirm('The URL does not start with rtmp:// or rtmps://. Are you sure you want to continue?')) {
+                        return;
+                    }
+                }
+
+                showMessage('Updating RTMP URL...');
+
                 try {
                     const response = await fetch('/api/rtmp-url', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ rtmpUrl: newRtmpUrl })
                     });
+
                     const result = await response.json();
+
                     if (result.success) {
-                        showMessage('RTMP URL updated successfully!');
-                        fetchStreamInfo(); // Refresh info
+                        showMessage(`RTMP URL updated successfully to: ${result.newRtmpUrl}`);
+                        fetchStreamInfo(); // Refresh stream info to reflect changes
                     } else {
                         showMessage(result.message || 'Failed to update RTMP URL.', true);
                     }
                 } catch (error) {
                     console.error('Error updating RTMP URL:', error);
-                    showMessage('Error updating RTMP URL.', true);
+                    showMessage('Network error while updating RTMP URL.', true);
                 }
             });
         }
