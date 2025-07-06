@@ -1,10 +1,10 @@
-import { TpaServer, TpaSession, RtmpStreamStatus, GlassesToCloudMessageType } from '@augmentos/sdk';
+import { TpaServer, TpaSession, RtmpStreamStatus, GlassesToCloudMessageType, AppServer } from '@mentra/sdk';
 import { setupExpressRoutes } from './webview';
 import path from 'path';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 const PACKAGE_NAME = process.env.PACKAGE_NAME;
-const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY;
+const MENTRAOS_API_KEY = process.env.MENTRAOS_API_KEY;
 
 // Interface for per-session stream state
 interface UserStreamState {
@@ -18,7 +18,7 @@ interface UserPersistentSettings {
   rtmpUrl: string;
 }
 
-class ExampleAugmentOSApp extends TpaServer {
+class SimpleRtmpStreamingApp extends AppServer {
   // Map userId to their session and stream state
   private activeUserStates: Map<string, UserStreamState> = new Map();
 
@@ -28,15 +28,15 @@ class ExampleAugmentOSApp extends TpaServer {
   private defaultRtmpUrl: string = 'rtmp://0.0.0.0/s/streamKey';
 
   constructor() {
-    if (!PACKAGE_NAME || !AUGMENTOS_API_KEY) {
+    if (!PACKAGE_NAME || !MENTRAOS_API_KEY) {
       throw new Error("PACKAGE_NAME and API_KEY must be set");
     }
     super({
       packageName: PACKAGE_NAME,
-      apiKey: AUGMENTOS_API_KEY,
+      apiKey: MENTRAOS_API_KEY,
       port: PORT,
       publicDir: path.join(__dirname, '../public'),
-      augmentOSWebsocketUrl: 'ws://localhost:80/ws'
+      //augmentOSWebsocketUrl: 'ws://localhost:80/ws'
     });
     setupExpressRoutes(this);
   }
@@ -283,7 +283,7 @@ class ExampleAugmentOSApp extends TpaServer {
   }
 }
 
-const app = new ExampleAugmentOSApp();
+const app = new SimpleRtmpStreamingApp();
 app.start().catch(console.error);
 
-export { ExampleAugmentOSApp };
+export { SimpleRtmpStreamingApp };

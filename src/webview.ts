@@ -1,15 +1,15 @@
-import { AuthenticatedRequest, TpaServer } from '@augmentos/sdk';
+import { AppServer, AuthenticatedRequest, TpaServer } from '@mentra/sdk';
 import express from 'express';
 import path from 'path';
-import { ExampleAugmentOSApp } from './index'; // Import the app class
+import { SimpleRtmpStreamingApp } from './index'; // Import the app class
 
 /**
  * Sets up all Express routes and middleware for the TPA server
- * @param serverInstance The TPA server instance, cast to ExampleAugmentOSApp for specific methods
+ * @param serverInstance The TPA server instance, cast to SimpleRtmpStreamingApp for specific methods
  */
-export function setupExpressRoutes(serverInstance: TpaServer): void {
+export function setupExpressRoutes(serverInstance: AppServer): void {
   const app = serverInstance.getExpressApp();
-  const exampleApp = serverInstance as ExampleAugmentOSApp;
+  const exampleApp = serverInstance as SimpleRtmpStreamingApp;
 
   // Set up EJS as the view engine
   app.set('view engine', 'ejs');

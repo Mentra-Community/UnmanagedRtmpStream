@@ -1,5 +1,5 @@
 {
-  "name": "augmentos-cloud-example-app",
+  "name": "mentraos-simple-rtmp-app",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
@@ -11,7 +11,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@augmentos/sdk": "*",
+    "@mentra/sdk": "*",
     "@types/express": "^5.0.1",
     "@types/node": "^22.13.14",
     "@types/ws": "^8.18.0",
