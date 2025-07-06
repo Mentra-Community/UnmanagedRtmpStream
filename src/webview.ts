@@ -5,6 +5,7 @@ import { SimpleRtmpStreamingApp } from './index'; // Import the app class
 
 /**
  * Sets up all Express routes and middleware for the TPA server
+ * test
  * @param serverInstance The TPA server instance, cast to SimpleRtmpStreamingApp for specific methods
  */
 export function setupExpressRoutes(serverInstance: AppServer): void {
