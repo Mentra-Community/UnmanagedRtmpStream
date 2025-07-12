@@ -1,4 +1,4 @@
-import { TpaServer, TpaSession, RtmpStreamStatus, GlassesToCloudMessageType, AppServer } from '@mentra/sdk';
+import { TpaServer, TpaSession, RtmpStreamStatus, GlassesToCloudMessageType, CloudToAppMessageType, AppServer, ManagedStreamStatus, StreamType } from '@mentra/sdk';
 import { setupExpressRoutes } from './webview';
 import path from 'path';
 
@@ -10,6 +10,7 @@ const MENTRAOS_API_KEY = process.env.MENTRAOS_API_KEY;
 interface UserStreamState {
   rtmpUrl: string;
   streamStatus: RtmpStreamStatus;
+  managedStreamStatus: ManagedStreamStatus | null;
   session: TpaSession;
 }
 
@@ -112,6 +113,18 @@ class SimpleRtmpStreamingApp extends AppServer {
 
   public streamStoppedStatus: RtmpStreamStatus = { type: GlassesToCloudMessageType.RTMP_STREAM_STATUS, status: 'stopped', timestamp: new Date() };
 
+  /**
+   * Gets the managed stream status for a specific user
+   * @param userId - The user ID to get the managed stream status for
+   * @returns The user's managed stream status or null
+   */
+  public getManagedStreamStatusForUser(userId: string): ManagedStreamStatus | null {
+    const userState = this.activeUserStates.get(userId);
+    const status = userState?.managedStreamStatus || null;
+    console.log(`Getting managed stream status for user ${userId}:`, status);
+    return status;
+  }
+
   // Method to start stream for a user
   public async startStreamForUser(userId: string, rtmpUrl?: string): Promise<void> {
     const userState = this.activeUserStates.get(userId);
@@ -125,11 +138,10 @@ class SimpleRtmpStreamingApp extends AppServer {
     console.log(`Attempting to start stream for user ${userId} to URL ${urlToUse}`);
     userState.session.layouts.showTextWall("Starting RTMP stream via web...");
     try {
-      await userState.session.streaming.requestStream({
+      await userState.session.camera.startStream({
         rtmpUrl: urlToUse,
-        video: { width: 1280, height: 720, bitrate: 2000000, frameRate: 30 },
-        audio: { bitrate: 128000, sampleRate: 44100, echoCancellation: true, noiseSuppression: true }
       });
+
       console.log("RTMP stream requested successfully via web for user:", userId);
       // Status will be updated by onStatus handler
     } catch (error: any) {
@@ -151,13 +163,93 @@ class SimpleRtmpStreamingApp extends AppServer {
     console.log(`Attempting to stop stream for user ${userId}`);
     userState.session.layouts.showTextWall("Stopping RTMP stream via web...");
     try {
-      await userState.session.streaming.stopStream();
+      await userState.session.camera.stopStream();
       console.log("Stream stop requested successfully via web for user:", userId);
       // Status will be updated by onStatus handler
     } catch (error: any) {
       console.error(`Failed to stop stream for user ${userId}:`, error);
       userState.session.layouts.showTextWall(`Failed to stop stream: ${error.message}`);
       userState.streamStatus = { ...this.getInitialStreamStatus(), status: 'error', errorDetails: error.message, timestamp: new Date()};
+      throw error;
+    }
+  }
+
+  // Method to start managed stream for a user
+  public async startManagedStreamForUser(userId: string): Promise<any> {
+    const userState = this.activeUserStates.get(userId);
+    if (!userState) {
+      console.error("No active session for user:", userId);
+      throw new Error("No active session for user to start managed stream.");
+    }
+
+    console.log(`Attempting to start managed stream for user ${userId}`);
+    userState.session.layouts.showTextWall("Starting managed RTMP stream via web...");
+    try {
+      const urls = await userState.session.camera.startManagedStream();
+      console.log("Managed stream URLs received for user:", userId, urls);
+      
+      // Initialize managed stream status
+      userState.managedStreamStatus = {
+        type: CloudToAppMessageType.MANAGED_STREAM_STATUS,
+        status: 'initializing',
+        hlsUrl: urls.hlsUrl,
+        dashUrl: urls.dashUrl,
+        webrtcUrl: urls.webrtcUrl,
+        streamId: urls.streamId,
+        timestamp: new Date()
+      };
+      
+      return urls;
+    } catch (error: any) {
+      console.error(`Failed to start managed stream for user ${userId}:`, error);
+      userState.session.layouts.showTextWall(`Failed to start managed stream: ${error.message}`);
+      userState.managedStreamStatus = {
+        type: CloudToAppMessageType.MANAGED_STREAM_STATUS,
+        status: 'error',
+        message: error.message,
+        timestamp: new Date()
+      };
+      throw error;
+    }
+  }
+
+  // Method to stop managed stream for a user
+  public async stopManagedStreamForUser(userId: string): Promise<void> {
+    const userState = this.activeUserStates.get(userId);
+    if (!userState) {
+      console.error("No active session for user:", userId);
+      throw new Error("No active session for user to stop managed stream.");
+    }
+    
+    // Log current state for debugging
+    const hasLocalManagedStream = userState.managedStreamStatus && 
+                                  userState.managedStreamStatus.status !== 'stopped' && 
+                                  userState.managedStreamStatus.status !== 'error';
+    const hasSdkManagedStream = userState.session.camera.isManagedStreamActive();
+    
+    console.log(`Managed stream status for user ${userId}: local=${hasLocalManagedStream}, sdk=${hasSdkManagedStream}, status=${userState.managedStreamStatus?.status}`);
+    
+    // Always allow stopping - the cloud will handle if there's nothing to stop
+    // This ensures we can clean up orphaned streams
+    
+    console.log(`Attempting to stop managed stream for user ${userId}`);
+    userState.session.layouts.showTextWall("Stopping managed RTMP stream via web...");
+    try {
+      await userState.session.camera.stopManagedStream();
+      console.log("Managed stream stop requested successfully via web for user:", userId);
+      // Don't immediately set to null - wait for the 'stopped' status from the cloud
+      // userState.managedStreamStatus = null;
+    } catch (error: any) {
+      console.error(`Failed to stop managed stream for user ${userId}:`, error);
+      userState.session.layouts.showTextWall(`Failed to stop managed stream: ${error.message}`);
+      if (userState.managedStreamStatus) {
+        userState.managedStreamStatus = {
+          ...userState.managedStreamStatus,
+          status: 'error',
+          message: error.message,
+          timestamp: new Date()
+        };
+      }
       throw error;
     }
   }
@@ -173,20 +265,56 @@ class SimpleRtmpStreamingApp extends AppServer {
     const userState: UserStreamState = {
       rtmpUrl: userRtmpUrl,
       streamStatus: this.getInitialStreamStatus(),
+      managedStreamStatus: null,
       session: session,
     };
     this.activeUserStates.set(userId, userState);
 
     console.log(`User ${userId} restored with RTMP URL: ${userRtmpUrl}`);
-    session.layouts.showTextWall("Example Photo App Ready!");
+    
+    // Subscribe to managed stream status updates
+    //session.subscribe(StreamType.MANAGED_STREAM_STATUS);
+    //session.subscribe(StreamType.RTMP_STREAM_STATUS);
+    
+    // Set up managed stream status handler EARLY to catch all updates
+    const managedStreamCleanup = session.camera.onManagedStreamStatus((status: ManagedStreamStatus) => {
+        console.log(`Managed stream status update for user ${userId}: ${status.status}`, status);
+        const currentUserState = this.activeUserStates.get(userId);
+        if (currentUserState) {
+            currentUserState.managedStreamStatus = { ...status, timestamp: new Date() };
+            console.log(`Updated managed stream status in state for user ${userId}:`, currentUserState.managedStreamStatus);
+            // Propagate essential parts of status for UI update to glasses
+            switch (status.status) {
+                case 'initializing':
+                    session.layouts.showTextWall('Managed stream is initializing...');
+                    break;
+                case 'active':
+                    session.layouts.showTextWall('Managed stream is live! URLs ready.');
+                    break;
+                case 'error':
+                    session.layouts.showTextWall(`Managed stream error: ${status.message}`);
+                    break;
+                case 'stopped':
+                    session.layouts.showTextWall('Managed stream has stopped');
+                    // Clear the managed stream status when stopped
+                    currentUserState.managedStreamStatus = null;
+                    break;
+            }
+        } else {
+            console.warn("Received managed stream status for a user with no active state object:", userId);
+        }
+    });
+    
+    session.layouts.showTextWall("RTMP Streaming Example Ready!");
     // ... (rest of initial photo logic if any, currently commented out)
 
     const cleanup = [
+      managedStreamCleanup,
       session.events.onConnected(async (data) => {
         console.log(`Glass connected for user ${userId}! Starting RTMP stream check...`);
         session.layouts.showTextWall('Connected! Starting RTMP stream...');
         try {
-          await session.streaming.requestStream({
+          await session.camera.startStream({
             rtmpUrl: userState.rtmpUrl, // Use user-specific RTMP URL
             video: { width: 1280, height: 720, bitrate: 2000000, frameRate: 30 },
             audio: { bitrate: 128000, sampleRate: 44100, echoCancellation: true, noiseSuppression: true }
@@ -197,48 +325,12 @@ class SimpleRtmpStreamingApp extends AppServer {
           session.layouts.showTextWall("Failed to take initial photo/stream: " + error.message);
           userState.streamStatus = { ...this.getInitialStreamStatus(), status: 'error', errorDetails: error.message, timestamp: new Date()};
         }
-        const photoUrl = await session.requestPhoto({ saveToGallery: true });
-      }),
-      session.events.onTranscription(async (data) => {
-        session.layouts.showTextWall(data.text, { durationMs: data.isFinal ? 3000 : undefined });
-        if (data.isFinal && data.text.toLowerCase().includes("photo")) { /* ... photo logic ... */ }
-
-        if (data.isFinal && data.text.toLowerCase().includes("stop streaming")) {
-          try {
-            console.log("Stop streaming command detected for user:", userId);
-            session.layouts.showTextWall("Stopping RTMP stream...");
-            await session.streaming.stopStream();
-            console.log("Stream stopped successfully by voice for user:", userId);
-            // userState.streamStatus will be updated by onStatus
-          } catch (error: any) {
-            console.error("Error stopping stream by voice:", error);
-            session.layouts.showTextWall("Failed to stop streaming: " + error.message);
-            userState.streamStatus = { ...this.getInitialStreamStatus(), status: 'error', errorDetails: error.message, timestamp: new Date()};
-          }
-        }
-
-        if (data.isFinal && data.text.toLowerCase().includes("start streaming")) {
-          try {
-            console.log("Start streaming command detected for user:", userId);
-            session.layouts.showTextWall("Starting RTMP stream...");
-            await session.streaming.requestStream({
-              rtmpUrl: userState.rtmpUrl, // Use user-specific RTMP URL
-              video: { width: 1280, height: 720, bitrate: 2000000, frameRate: 30 },
-              audio: { bitrate: 128000, sampleRate: 44100, echoCancellation: true, noiseSuppression: true }
-            });
-            console.log("RTMP stream started successfully by voice for user:", userId);
-            // userState.streamStatus will be updated by onStatus
-          } catch (error: any) {
-            console.error("Error starting stream by voice:", error);
-            session.layouts.showTextWall("Failed to start streaming: " + error.message);
-            userState.streamStatus = { ...this.getInitialStreamStatus(), status: 'error', errorDetails: error.message, timestamp: new Date()};
-          }
-        }
+        const photoUrl = await session.camera.requestPhoto({ saveToGallery: true });
       }),
       session.events.onPhoneNotifications((data) => { }),
       session.events.onGlassesBattery((data) => { }),
       session.events.onError((error) => { console.error('Session Error for user '+ userId + ':', error); }),
-      session.streaming.onStatus((status: RtmpStreamStatus) => {
+      session.camera.onStreamStatus((status: RtmpStreamStatus) => {
         console.log(`Stream status update for user ${userId}: ${status.status}`, status);
         const currentUserState = this.activeUserStates.get(userId);
         if (currentUserState) {

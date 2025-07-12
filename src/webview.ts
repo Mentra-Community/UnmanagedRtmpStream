@@ -51,6 +51,7 @@ export function setupExpressRoutes(serverInstance: AppServer): void {
       return res.status(401).json({
         rtmpUrl: exampleApp.getDefaultRtmpUrl(),
         streamStatus: exampleApp.streamStoppedStatus,
+        managedStreamStatus: null,
         userId: null,
         message: "User not authenticated. Showing default info."
       });
@@ -58,6 +59,7 @@ export function setupExpressRoutes(serverInstance: AppServer): void {
     res.json({
       rtmpUrl: exampleApp.getRtmpUrlForUser(userId),
       streamStatus: exampleApp.getStreamStatusForUser(userId),
+      managedStreamStatus: exampleApp.getManagedStreamStatusForUser(userId),
       userId: userId
     });
   });
@@ -129,6 +131,38 @@ export function setupExpressRoutes(serverInstance: AppServer): void {
       res.json({ success: true, message: 'Stream stop requested for user.' });
     } catch (error: any) {
       res.status(500).json({ success: false, message: error.message || 'Failed to stop stream for user.' });
+    }
+  });
+
+  // API endpoint to start managed stream for the authenticated user
+  app.post('/api/start-managed-stream', async (req: AuthenticatedRequest, res: any) => {
+    const userId = req.authUserId;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'User not authenticated. Cannot start managed stream.' });
+    }
+    try {
+      const urls = await exampleApp.startManagedStreamForUser(userId);
+      res.json({ 
+        success: true, 
+        message: 'Managed stream start requested for user.',
+        urls: urls 
+      });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message || 'Failed to start managed stream for user.' });
+    }
+  });
+
+  // API endpoint to stop managed stream for the authenticated user
+  app.post('/api/stop-managed-stream', async (req: AuthenticatedRequest, res: any) => {
+    const userId = req.authUserId;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'User not authenticated. Cannot stop managed stream.' });
+    }
+    try {
+      await exampleApp.stopManagedStreamForUser(userId);
+      res.json({ success: true, message: 'Managed stream stop requested for user.' });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message || 'Failed to stop managed stream for user.' });
     }
   });
 }

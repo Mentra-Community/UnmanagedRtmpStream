@@ -58,6 +58,12 @@
             background-color: #007bff;
             color: white;
         }
+        .btn-copy {
+            background-color: #6c757d;
+            color: white;
+            font-size: 0.9em;
+            padding: 5px 10px;
+        }
         .status-active {
             color: green;
             font-weight: bold;
@@ -75,7 +81,7 @@
             color: #6c757d;
             font-weight: bold;
         }
-        #streamStatus, #streamStats {
+        #streamStatus, #streamStats, .json-display {
             padding: 10px;
             background-color: #e9ecef;
             border-radius: 4px;
@@ -84,6 +90,60 @@
         .hidden { display: none; }
         .error-message { color: red; margin-top: 10px; }
         .success-message { color: green; margin-top: 10px; }
+        
+        /* Tab styles */
+        .tabs {
+            display: flex;
+            border-bottom: 2px solid #ddd;
+            margin-bottom: 20px;
+        }
+        .tab-button {
+            background: none;
+            border: none;
+            padding: 10px 20px;
+            font-size: 1.1em;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+            margin-right: 5px;
+        }
+        .tab-button:hover {
+            background-color: #f8f9fa;
+        }
+        .tab-button.active {
+            border-bottom-color: #007bff;
+            color: #007bff;
+            font-weight: bold;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        
+        /* URL display styles */
+        .url-display {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-family: monospace;
+            word-break: break-all;
+        }
+        .url-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .url-label {
+            font-weight: bold;
+            min-width: 100px;
+        }
+        .url-value {
+            flex: 1;
+            margin-right: 10px;
+        }
     </style>
 </head>
 <body>
@@ -101,27 +161,76 @@
         </div>
 
         <% if (userId) { %>
-            <div class="rtmp-control">
-                <h2>RTMP URL</h2>
-                <label for="rtmpUrlInput">RTMP URL:</label>
-                <input type="text" id="rtmpUrlInput" value="<%= rtmpUrl || '' %>">
-                <button id="updateRtmpUrlButton" class="btn-update">Update URL</button>
+            <!-- Tab Navigation -->
+            <div class="tabs">
+                <button class="tab-button active" onclick="showTab('managed')">Managed Stream</button>
+                <button class="tab-button" onclick="showTab('unmanaged')">Unmanaged Stream</button>
             </div>
 
-            <div class="stream-actions">
-                <h2>Stream Actions</h2>
-                <button id="startStreamButton" class="btn-start">Start Stream</button>
-                <button id="stopStreamButton" class="btn-stop">Stop Stream</button>
+            <!-- Managed Stream Tab -->
+            <div id="managed-tab" class="tab-content active">
+                <h2>Managed RTMP Stream Control</h2>
+                <p>MentraOS handles all infrastructure - no RTMP server needed!</p>
+                
+                <div class="stream-actions">
+                    <button id="startManagedStreamButton" class="btn-start">Start Managed Stream</button>
+                    <button id="stopManagedStreamButton" class="btn-stop">Stop Managed Stream</button>
+                </div>
+
+                <div class="stream-status-container">
+                    <h3>Managed Stream Status</h3>
+                    <div id="managedStatusText"></div>
+                    <pre id="managedStreamStatus" class="json-display">No managed stream active</pre>
+                    
+                    <div id="managedUrlsContainer" class="hidden">
+                        <h3>Stream URLs</h3>
+                        <div class="url-display">
+                            <div class="url-row">
+                                <span class="url-label">HLS URL:</span>
+                                <span class="url-value" id="hlsUrl">-</span>
+                                <button class="btn-copy" onclick="copyToClipboard('hlsUrl')">Copy</button>
+                            </div>
+                            <div class="url-row">
+                                <span class="url-label">DASH URL:</span>
+                                <span class="url-value" id="dashUrl">-</span>
+                                <button class="btn-copy" onclick="copyToClipboard('dashUrl')">Copy</button>
+                            </div>
+                            <div class="url-row" id="webrtcUrlRow" style="display:none;">
+                                <span class="url-label">WebRTC URL:</span>
+                                <span class="url-value" id="webrtcUrl">-</span>
+                                <button class="btn-copy" onclick="copyToClipboard('webrtcUrl')">Copy</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Unmanaged Stream Tab -->
+            <div id="unmanaged-tab" class="tab-content">
+                <h2>Unmanaged RTMP Stream Control</h2>
+                <p>Stream to your own RTMP server</p>
+                
+                <div class="rtmp-control">
+                    <label for="rtmpUrlInput">RTMP URL:</label>
+                    <input type="text" id="rtmpUrlInput" value="<%= rtmpUrl || '' %>">
+                    <button id="updateRtmpUrlButton" class="btn-update">Update URL</button>
+                </div>
+
+                <div class="stream-actions">
+                    <button id="startStreamButton" class="btn-start">Start Stream</button>
+                    <button id="stopStreamButton" class="btn-stop">Stop Stream</button>
+                </div>
+
+                <div class="stream-status-container">
+                    <h3>Current Stream Status</h3>
+                    <div id="currentStatusText"></div>
+                    <pre id="streamStatus"><%= JSON.stringify(streamStatus, null, 2) %></pre>
+                    <h3>Stream Stats</h3>
+                    <pre id="streamStats"><%= JSON.stringify(streamStatus && streamStatus.stats ? streamStatus.stats : {}, null, 2) %></pre>
+                </div>
             </div>
         <% } %>
 
-        <div class="stream-status-container">
-            <h2>Current Stream Status</h2>
-            <div id="currentStatusText"></div>
-            <pre id="streamStatus"><%= JSON.stringify(streamStatus, null, 2) %></pre>
-            <h2>Stream Stats</h2>
-            <pre id="streamStats"><%= JSON.stringify(streamStatus && streamStatus.stats ? streamStatus.stats : {}, null, 2) %></pre>
-        </div>
         <div id="messageArea" class="message-area"></div>
 
     </div>
@@ -135,8 +244,40 @@
         const streamStatsDiv = document.getElementById('streamStats');
         const currentStatusTextDiv = document.getElementById('currentStatusText');
         const messageArea = document.getElementById('messageArea');
+        
+        // Managed stream elements
+        const startManagedStreamButton = document.getElementById('startManagedStreamButton');
+        const stopManagedStreamButton = document.getElementById('stopManagedStreamButton');
+        const managedStreamStatusDiv = document.getElementById('managedStreamStatus');
+        const managedStatusTextDiv = document.getElementById('managedStatusText');
+        const managedUrlsContainer = document.getElementById('managedUrlsContainer');
 
         const currentUserId = '<%= userId %>'; // Will be empty if not authenticated
+        
+        // Tab switching function
+        function showTab(tabName) {
+            // Update tab buttons
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            // Update tab content
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            document.getElementById(`${tabName}-tab`).classList.add('active');
+        }
+        
+        // Copy to clipboard function
+        function copyToClipboard(elementId) {
+            const text = document.getElementById(elementId).textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                showMessage('URL copied to clipboard!');
+            }).catch(err => {
+                showMessage('Failed to copy URL', true);
+            });
+        }
 
         function showMessage(text, isError = false) {
             messageArea.textContent = text;
@@ -147,14 +288,50 @@
             try {
                 const response = await fetch('/api/stream-info');
                 const data = await response.json();
+                
+                // Update unmanaged stream info
                 if (streamStatusDiv) streamStatusDiv.textContent = JSON.stringify(data.streamStatus || {}, null, 2);
                 if (streamStatsDiv) streamStatsDiv.textContent = JSON.stringify(data.streamStatus && data.streamStatus.stats ? data.streamStatus.stats : {}, null, 2);
                 updateStatusText(data.streamStatus);
+                
+                // Update managed stream info
+                if (data.managedStreamStatus) {
+                    updateManagedStreamDisplay(data.managedStreamStatus);
+                }
             } catch (error) {
                 console.error('Error fetching stream info:', error);
                 if (streamStatusDiv) streamStatusDiv.textContent = 'Error fetching status.';
                 if (streamStatsDiv) streamStatsDiv.textContent = 'N/A';
                 updateStatusText(null);
+            }
+        }
+        
+        function updateManagedStreamDisplay(status) {
+            if (!managedStreamStatusDiv) return;
+            
+            // Update JSON display
+            managedStreamStatusDiv.textContent = JSON.stringify(status, null, 2);
+            
+            // Update status text
+            if (managedStatusTextDiv) {
+                managedStatusTextDiv.textContent = `Status: ${status.status ? status.status.toUpperCase() : 'UNKNOWN'}`;
+                managedStatusTextDiv.className = status.status ? `status-${status.status.toLowerCase()}` : '';
+            }
+            
+            // Show/hide URLs based on status
+            if (status.status === 'active' && status.hlsUrl) {
+                managedUrlsContainer.classList.remove('hidden');
+                document.getElementById('hlsUrl').textContent = status.hlsUrl;
+                document.getElementById('dashUrl').textContent = status.dashUrl || '-';
+                
+                if (status.webrtcUrl) {
+                    document.getElementById('webrtcUrlRow').style.display = 'flex';
+                    document.getElementById('webrtcUrl').textContent = status.webrtcUrl;
+                } else {
+                    document.getElementById('webrtcUrlRow').style.display = 'none';
+                }
+            } else {
+                managedUrlsContainer.classList.add('hidden');
             }
         }
 
@@ -219,7 +396,7 @@
             startStreamButton.addEventListener('click', async () => {
                 if (!currentUserId) { showMessage('Not authenticated. Cannot start stream.', true); return; }
                 const currentRtmpUrl = rtmpUrlInput ? rtmpUrlInput.value : null;
-                showMessage('Requesting to start stream...');
+                showMessage('Requesting to start unmanaged stream...');
                 try {
                     const response = await fetch('/api/start-stream', {
                         method: 'POST',
@@ -260,6 +437,63 @@
                 } catch (error) {
                     console.error('Error stopping stream:', error);
                     showMessage('Error stopping stream.', true);
+                }
+            });
+        }
+
+        // Managed stream button handlers
+        if (startManagedStreamButton) {
+            startManagedStreamButton.addEventListener('click', async () => {
+                if (!currentUserId) { showMessage('Not authenticated. Cannot start managed stream.', true); return; }
+                showMessage('Requesting to start managed stream...');
+                try {
+                    const response = await fetch('/api/start-managed-stream', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                    const result = await response.json();
+                    if (result.success) {
+                        showMessage('Managed stream request sent! Waiting for stream to go live...');
+                        // Show initial URLs if available
+                        if (result.urls) {
+                            updateManagedStreamDisplay({
+                                status: 'initializing',
+                                hlsUrl: result.urls.hlsUrl,
+                                dashUrl: result.urls.dashUrl,
+                                webrtcUrl: result.urls.webrtcUrl
+                            });
+                        }
+                    } else {
+                        showMessage(result.message || 'Failed to start managed stream.', true);
+                    }
+                    setTimeout(fetchStreamInfo, 1000);
+                } catch (error) {
+                    console.error('Error starting managed stream:', error);
+                    showMessage('Error starting managed stream.', true);
+                }
+            });
+        }
+
+        if (stopManagedStreamButton) {
+            stopManagedStreamButton.addEventListener('click', async () => {
+                if (!currentUserId) { showMessage('Not authenticated. Cannot stop managed stream.', true); return; }
+                showMessage('Requesting to stop managed stream...');
+                try {
+                    const response = await fetch('/api/stop-managed-stream', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                    const result = await response.json();
+                    if (result.success) {
+                        showMessage('Stop managed stream request sent successfully!');
+                        managedUrlsContainer.classList.add('hidden');
+                    } else {
+                        showMessage(result.message || 'Failed to stop managed stream.', true);
+                    }
+                    setTimeout(fetchStreamInfo, 1000);
+                } catch (error) {
+                    console.error('Error stopping managed stream:', error);
+                    showMessage('Error stopping managed stream.', true);
                 }
             });
         }
