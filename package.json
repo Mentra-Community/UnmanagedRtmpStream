@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "dev": "bun --hot src/index.ts",
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
     "test": "echo \"Error: no test specified\" && exit 1",
     "ngrok": "ngrok http --url=israelovtpa.ngrok.app 3000"
   },
